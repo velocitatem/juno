@@ -91,7 +91,11 @@ def run_removal(env_name):
     thread = threading.Thread(target=remove_kernel_and_env, args=(env_name,))
     thread.start()
 
-st.title("JupyterLab Virtual Environment Manager")
+# show image banner.png
+from PIL import Image
+image = Image.open('banner.png')
+st.image(image, caption='Your JupyterNM Kernel Virtual Environment Manager', use_container_width=True)
+
 
 st.header("Create a New Virtual Environment")
 env_name = st.text_input("Enter the name for the new virtual environment (and kernel):")
