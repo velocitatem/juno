@@ -1,122 +1,586 @@
-import streamlit as st
-import os
 import sys
+import os
 import subprocess
-import threading
 import shutil
+import threading
 from pathlib import Path
-import time
 
-# App configuration and styling
-st.set_page_config(
-    page_title="Juno - Jupyter Environment Manager",
-    page_icon="🚀",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout,
+                           QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit,
+                           QListWidget, QListWidgetItem, QMessageBox, QComboBox,
+                           QFileDialog, QGroupBox, QFormLayout, QCheckBox, QSplitter)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer
+from PyQt5.QtGui import QIcon, QFont, QColor
 
-# Custom CSS to improve appearance
-st.markdown("""
-<style>
-    .main .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-    }
-    .stButton>button {
-        width: 100%;
-    }
-    .env-card {
-        background-color: #f0f2f6;
-        border-radius: 5px;
-        padding: 10px;
-        margin-bottom: 10px;
-    }
-    .success-message {
-        color: #28a745;
-        font-weight: bold;
-    }
-    .error-message {
-        color: #dc3545;
-        font-weight: bold;
-    }
-    .info-message {
-        color: #17a2b8;
-        font-weight: bold;
-    }
-</style>
-""", unsafe_allow_html=True)
 
-# Default base directory for virtual environments
-BASE_DIR = os.environ.get("JUNO_VENV_DIR", os.path.join(os.path.expanduser("~"), ".jupyter_venvs"))
+class WorkerThread(QThread):
+    """Worker thread for running operations that might take time"""
+    finished = pyqtSignal(bool, str)  # Success flag, Message
 
-# Create the base directory if it doesn't exist
-os.makedirs(BASE_DIR, exist_ok=True)
+    def __init__(self, function, *args, **kwargs):
+        super().__init__()
+        self.function = function
+        self.args = args
+        self.kwargs = kwargs
+        self.result = None
 
-# Session state to track operations
-if 'operation_status' not in st.session_state:
-    st.session_state.operation_status = None
-if 'operation_message' not in st.session_state:
-    st.session_state.operation_message = ""
-if 'refresh_counter' not in st.session_state:
-    st.session_state.refresh_counter = 0
+    def run(self):
+        try:
+            self.result = self.function(*self.args, **self.kwargs)
+            self.finished.emit(True, "Operation completed successfully")
+        except Exception as e:
+            self.finished.emit(False, str(e))
 
-def get_installed_packages(env_name):
-    """Get list of installed packages in a virtual environment"""
-    env_path = os.path.join(BASE_DIR, env_name)
 
-    if os.name == "nt":
-        python_executable = os.path.join(env_path, "Scripts", "python.exe")
-    else:
-        python_executable = os.path.join(env_path, "bin", "python")
+class JunoApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
 
-    try:
-        result = subprocess.run(
-            [python_executable, "-m", "pip", "list", "--format=freeze"],
-            capture_output=True,
-            text=True,
-            check=True
+        # Default base directory for virtual environments
+        self.base_dir = os.environ.get("JUNO_VENV_DIR",
+                                    os.path.join(os.path.expanduser("~"), ".jupyter_venvs"))
+
+        # Create the base directory if it doesn't exist
+        os.makedirs(self.base_dir, exist_ok=True)
+        
+        # Initialize thread attributes
+        self.create_thread = None
+        self.remove_thread = None 
+        self.install_thread = None
+        self.worker_thread = None
+
+        self.setWindowTitle("Juno - JupyterLab Virtual Environment Manager")
+        self.setMinimumSize(800, 600)
+
+        # Set application icon
+        # self.setWindowIcon(QIcon("path/to/icon.png"))
+
+        # Create the main widget and layout
+        self.central_widget = QWidget()
+        self.setCentralWidget(self.central_widget)
+        self.main_layout = QVBoxLayout(self.central_widget)
+
+        # Add title and description
+        title_label = QLabel("♃ Juno: JupyterLab Virtual Environment Manager")
+        title_font = QFont()
+        title_font.setPointSize(16)
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+
+        desc_label = QLabel("Manage Python virtual environments for JupyterLab.")
+
+        self.main_layout.addWidget(title_label)
+        self.main_layout.addWidget(desc_label)
+
+        # Display storage location
+        storage_label = QLabel(f"Virtual environments stored at: {self.base_dir}")
+        storage_label.setStyleSheet("background-color: #e0f7fa; padding: 5px; border-radius: 3px;")
+        self.main_layout.addWidget(storage_label)
+
+        # Status message area
+        self.status_area = QLabel()
+        self.status_area.setStyleSheet("padding: 5px; margin: 5px 0; border-radius: 3px;")
+        self.status_area.setVisible(False)
+        self.main_layout.addWidget(self.status_area)
+
+        # Create the main content splitter (left/right panels)
+        self.content_splitter = QSplitter(Qt.Horizontal)
+        self.main_layout.addWidget(self.content_splitter)
+
+        # Left panel - Create environment
+        self.left_panel = QWidget()
+        self.left_layout = QVBoxLayout(self.left_panel)
+
+        # Create environment group
+        self.create_env_group = QGroupBox("Create Environment")
+        create_env_layout = QFormLayout()
+
+        self.env_name_input = QLineEdit()
+        self.env_name_input.setPlaceholderText("Enter environment name (alphanumeric and underscores)")
+
+        self.packages_input = QLineEdit()
+        self.packages_input.setPlaceholderText("Optional: numpy,pandas,matplotlib")
+
+        self.create_btn = QPushButton("Create Environment")
+        self.create_btn.clicked.connect(self.create_environment)
+
+        create_env_layout.addRow("Environment Name:", self.env_name_input)
+        create_env_layout.addRow("Additional Packages:", self.packages_input)
+        create_env_layout.addRow(self.create_btn)
+
+        self.create_env_group.setLayout(create_env_layout)
+        self.left_layout.addWidget(self.create_env_group)
+
+        # Help section
+        help_group = QGroupBox("Help")
+        help_layout = QVBoxLayout()
+
+        help_text = QTextEdit()
+        help_text.setReadOnly(True)
+        help_text.setHtml("""
+        <h3>About Juno</h3>
+        <p>Juno is an application designed to simplify the management of
+        Python virtual environments for JupyterLab.</p>
+
+        <h3>How to Use</h3>
+        <ul>
+            <li><b>Create Environment:</b> Enter a name and optional packages</li>
+            <li><b>View Environments:</b> All environments are listed in the manage tab</li>
+            <li><b>Remove Environment:</b> Select an environment and click 'Remove'</li>
+            <li><b>Install Packages:</b> Add packages to an existing environment</li>
+            <li><b>Export Requirements:</b> Export requirements.txt from any environment</li>
+        </ul>
+
+        <h3>Troubleshooting</h3>
+        <ul>
+            <li><b>Missing Jupyter:</b> Make sure Jupyter is installed</li>
+            <li><b>Permission Issues:</b> Ensure you have write permissions</li>
+            <li><b>Kernel Not Showing:</b> Restart JupyterLab after creating a new environment</li>
+        </ul>
+        """)
+
+        help_layout.addWidget(help_text)
+        help_group.setLayout(help_layout)
+        self.left_layout.addWidget(help_group)
+
+        # Right panel - Manage environments
+        self.right_panel = QWidget()
+        self.right_layout = QVBoxLayout(self.right_panel)
+
+        # Add refresh button
+        refresh_layout = QHBoxLayout()
+        refresh_label = QLabel("Manage Environments")
+        refresh_label.setFont(QFont("", 12, QFont.Bold))
+        refresh_btn = QPushButton("Refresh List")
+        refresh_btn.clicked.connect(self.refresh_environments)
+        refresh_layout.addWidget(refresh_label)
+        refresh_layout.addStretch()
+        refresh_layout.addWidget(refresh_btn)
+        self.right_layout.addLayout(refresh_layout)
+
+        # Tabs for different management operations
+        self.tabs = QTabWidget()
+
+        # Tab 1: View and Remove
+        self.view_tab = QWidget()
+        view_layout = QVBoxLayout(self.view_tab)
+
+        self.env_list = QListWidget()
+        self.env_list.setSelectionMode(QListWidget.SingleSelection)
+        self.env_list.itemClicked.connect(self.on_env_selected)
+
+        view_layout.addWidget(QLabel("Select an environment:"))
+        view_layout.addWidget(self.env_list)
+
+        # Environment details
+        self.env_details = QTextEdit()
+        self.env_details.setReadOnly(True)
+        self.env_details.setMaximumHeight(100)
+        view_layout.addWidget(QLabel("Environment details:"))
+        view_layout.addWidget(self.env_details)
+
+        # Action buttons
+        actions_layout = QHBoxLayout()
+        self.remove_btn = QPushButton("Remove Selected Environment")
+        self.remove_btn.clicked.connect(self.confirm_remove_environment)
+        self.remove_btn.setEnabled(False)
+        actions_layout.addWidget(self.remove_btn)
+
+        view_layout.addLayout(actions_layout)
+
+        # Tab 2: Install Packages
+        self.install_tab = QWidget()
+        install_layout = QVBoxLayout(self.install_tab)
+
+        self.install_env_combo = QComboBox()
+        self.install_packages_input = QLineEdit()
+        self.install_packages_input.setPlaceholderText("numpy,pandas,matplotlib")
+        self.install_btn = QPushButton("Install Packages")
+        self.install_btn.clicked.connect(self.install_packages)
+
+        # Show installed packages
+        self.show_packages_check = QCheckBox("Show Installed Packages")
+        self.show_packages_check.stateChanged.connect(self.toggle_show_packages)
+        self.packages_display = QTextEdit()
+        self.packages_display.setReadOnly(True)
+        self.packages_display.setVisible(False)
+
+        install_layout.addWidget(QLabel("Select Environment:"))
+        install_layout.addWidget(self.install_env_combo)
+        install_layout.addWidget(QLabel("Packages to install (comma-separated):"))
+        install_layout.addWidget(self.install_packages_input)
+        install_layout.addWidget(self.install_btn)
+        install_layout.addWidget(self.show_packages_check)
+        install_layout.addWidget(self.packages_display)
+
+        # Tab 3: Export Requirements
+        self.export_tab = QWidget()
+        export_layout = QVBoxLayout(self.export_tab)
+
+        self.export_env_combo = QComboBox()
+        self.export_btn = QPushButton("Export requirements.txt")
+        self.export_btn.clicked.connect(self.export_requirements)
+        self.export_display = QTextEdit()
+        self.export_display.setReadOnly(True)
+        self.export_save_btn = QPushButton("Save to File")
+        self.export_save_btn.clicked.connect(self.save_requirements)
+        self.export_save_btn.setEnabled(False)
+
+        export_layout.addWidget(QLabel("Select Environment:"))
+        export_layout.addWidget(self.export_env_combo)
+        export_layout.addWidget(self.export_btn)
+        export_layout.addWidget(QLabel("Requirements:"))
+        export_layout.addWidget(self.export_display)
+        export_layout.addWidget(self.export_save_btn)
+
+        # Tab 4: Settings
+        self.settings_tab = QWidget()
+        settings_layout = QVBoxLayout(self.settings_tab)
+
+        self.base_dir_input = QLineEdit(self.base_dir)
+        browse_btn = QPushButton("Browse...")
+        browse_btn.clicked.connect(self.browse_directory)
+
+        dir_layout = QHBoxLayout()
+        dir_layout.addWidget(self.base_dir_input)
+        dir_layout.addWidget(browse_btn)
+
+        update_dir_btn = QPushButton("Update Base Directory")
+        update_dir_btn.clicked.connect(self.update_base_directory)
+
+        settings_layout.addWidget(QLabel("Virtual Environments Directory:"))
+        settings_layout.addLayout(dir_layout)
+        settings_layout.addWidget(update_dir_btn)
+        settings_layout.addStretch()
+
+        # Add all tabs
+        self.tabs.addTab(self.view_tab, "View & Remove")
+        self.tabs.addTab(self.install_tab, "Install Packages")
+        self.tabs.addTab(self.export_tab, "Export Requirements")
+        self.tabs.addTab(self.settings_tab, "Settings")
+
+        self.right_layout.addWidget(self.tabs)
+
+        # Add panels to splitter
+        self.content_splitter.addWidget(self.left_panel)
+        self.content_splitter.addWidget(self.right_panel)
+        self.content_splitter.setSizes([300, 500])
+
+        # Add footer
+        footer_label = QLabel("Juno: JupyterLab Virtual Environment Manager | MIT License")
+        footer_label.setAlignment(Qt.AlignCenter)
+        footer_label.setStyleSheet("color: #777; margin-top: 10px;")
+        self.main_layout.addWidget(footer_label)
+
+        # Initialize
+        self.refresh_environments()
+
+    def refresh_environments(self):
+        """Refresh the list of environments"""
+        self.env_list.clear()
+        self.install_env_combo.clear()
+        self.export_env_combo.clear()
+        self.env_details.clear()
+        self.remove_btn.setEnabled(False)
+
+        # Get list of environments
+        envs = self.list_envs()
+
+        if not envs:
+            item = QListWidgetItem("No environments found")
+            item.setForeground(QColor("#999"))
+            self.env_list.addItem(item)
+            return
+
+        # Add to list widget
+        for env in envs:
+            self.env_list.addItem(env)
+            self.install_env_combo.addItem(env)
+            self.export_env_combo.addItem(env)
+
+    def on_env_selected(self, item):
+        """Handle environment selection"""
+        env_name = item.text()
+        self.remove_btn.setEnabled(True)
+
+        # Display environment details
+        env_path = os.path.join(self.base_dir, env_name)
+        python_version = self.get_python_version(env_name)
+
+        details = f"Name: {env_name}\n"
+        details += f"Path: {env_path}\n"
+        details += f"Python: {python_version}\n"
+
+        self.env_details.setText(details)
+
+    def create_environment(self):
+        """Create a new virtual environment"""
+        env_name = self.env_name_input.text().strip()
+        packages = self.packages_input.text().strip()
+
+        if not env_name:
+            self.show_status("Please provide a valid environment name", "error")
+            return
+
+        if not env_name.isalnum() and not all(c.isalnum() or c == '_' for c in env_name):
+            self.show_status("Environment name should only contain alphanumeric characters and underscores", "error")
+            return
+
+        # Disable the create button to prevent multiple clicks
+        self.create_btn.setEnabled(False)
+        self.show_status("Creating environment... Please wait", "info")
+
+        # Run the creation in a thread
+        self.create_thread = WorkerThread(self.create_and_register_kernel, env_name, packages if packages else None)
+        self.create_thread.finished.connect(self.on_create_finished)
+        self.create_thread.start()
+
+    def on_create_finished(self, success, message):
+        """Handle completion of environment creation"""
+        self.create_btn.setEnabled(True)
+        if success:
+            self.show_status(f"Virtual environment created successfully", "success")
+            self.env_name_input.clear()
+            self.packages_input.clear()
+            self.refresh_environments()
+        else:
+            self.show_status(f"Error creating environment: {message}", "error")
+
+    def confirm_remove_environment(self):
+        """Confirm before removing an environment"""
+        if not self.env_list.currentItem():
+            return
+
+        env_name = self.env_list.currentItem().text()
+
+        reply = QMessageBox.question(
+            self,
+            'Confirm Removal',
+            f"Are you sure you want to remove the environment '{env_name}'?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
         )
-        return result.stdout.splitlines()
-    except subprocess.CalledProcessError:
-        return []
 
-def get_python_version(env_name):
-    """Get Python version for a virtual environment"""
-    env_path = os.path.join(BASE_DIR, env_name)
+        if reply == QMessageBox.Yes:
+            self.remove_environment(env_name)
 
-    if os.name == "nt":
-        python_executable = os.path.join(env_path, "Scripts", "python.exe")
-    else:
-        python_executable = os.path.join(env_path, "bin", "python")
+    def remove_environment(self, env_name):
+        """Remove a virtual environment"""
+        self.show_status(f"Removing environment '{env_name}'... Please wait", "info")
 
-    try:
-        result = subprocess.run(
-            [python_executable, "--version"],
-            capture_output=True,
-            text=True,
-            check=True
+        # Disable buttons during removal
+        self.remove_btn.setEnabled(False)
+
+        # Run the removal in a thread
+        self.remove_thread = WorkerThread(self.remove_kernel_and_env, env_name)
+        self.remove_thread.finished.connect(lambda success, msg: self.on_remove_finished(success, msg, env_name))
+        self.remove_thread.start()
+
+    def on_remove_finished(self, success, message, env_name):
+        """Handle completion of environment removal"""
+        if success:
+            self.show_status(f"Environment '{env_name}' removed successfully", "success")
+        else:
+            self.show_status(f"Error removing environment: {message}", "error")
+
+        self.refresh_environments()
+
+    def install_packages(self):
+        """Install packages in the selected environment"""
+        env_name = self.install_env_combo.currentText()
+        packages = self.install_packages_input.text().strip()
+
+        if not packages:
+            self.show_status("Please specify at least one package to install", "error")
+            return
+
+        self.install_btn.setEnabled(False)
+        self.show_status(f"Installing packages in '{env_name}'... Please wait", "info")
+
+        # Run the installation in a thread
+        self.install_thread = WorkerThread(self.install_packages_in_env, env_name, packages)
+        self.install_thread.finished.connect(self.on_install_finished)
+        self.install_thread.start()
+
+    def on_install_finished(self, success, message):
+        """Handle completion of package installation"""
+        self.install_btn.setEnabled(True)
+        if success:
+            self.show_status("Packages installed successfully", "success")
+            self.install_packages_input.clear()
+
+            # Refresh package list if shown
+            if self.show_packages_check.isChecked():
+                self.show_packages()
+        else:
+            self.show_status(f"Error installing packages: {message}", "error")
+
+    def toggle_show_packages(self, state):
+        """Toggle display of installed packages"""
+        self.packages_display.setVisible(state == Qt.Checked)
+        if state == Qt.Checked:
+            self.show_packages()
+
+    def show_packages(self):
+        """Show installed packages for the selected environment"""
+        env_name = self.install_env_combo.currentText()
+        if not env_name:
+            return
+
+        packages = self.get_installed_packages(env_name)
+        if packages:
+            self.packages_display.setText("\n".join(packages))
+        else:
+            self.packages_display.setText("Unable to retrieve package list.")
+
+    def export_requirements(self):
+        """Export requirements.txt from selected environment"""
+        env_name = self.export_env_combo.currentText()
+        if not env_name:
+            return
+
+        self.export_btn.setEnabled(False)
+        self.show_status("Exporting requirements... Please wait", "info")
+
+        # Run the export in a thread
+        self.worker_thread = WorkerThread(self.export_requirements_from_env, env_name)
+        self.worker_thread.finished.connect(self.on_export_finished)
+        self.worker_thread.start()
+
+    def on_export_finished(self, success, message):
+        """Handle completion of requirements export"""
+        self.export_btn.setEnabled(True)
+
+        if success and isinstance(self.worker_thread.result, str):
+            self.export_display.setText(self.worker_thread.result)
+            self.export_save_btn.setEnabled(True)
+            self.show_status("Requirements exported successfully", "success")
+        else:
+            self.export_display.setText("")
+            self.export_save_btn.setEnabled(False)
+            self.show_status(f"Error exporting requirements: {message}", "error")
+
+    def save_requirements(self):
+        """Save requirements.txt to a file"""
+        env_name = self.export_env_combo.currentText()
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Requirements",
+            f"{env_name}_requirements.txt",
+            "Text Files (*.txt)"
         )
-        return result.stdout.strip()
-    except subprocess.CalledProcessError:
-        return "Unknown"
 
-def create_and_register_kernel(env_name, base_dir=BASE_DIR, additional_packages=None):
-    """Create a virtual environment and register it as a Jupyter kernel"""
-    # Validating the environment name
-    if not env_name.isalnum() and not all(c.isalnum() or c == '_' for c in env_name):
-        st.session_state.operation_status = "error"
-        st.session_state.operation_message = "Environment name should only contain alphanumeric characters and underscores."
-        return
+        if filename:
+            try:
+                with open(filename, 'w') as f:
+                    f.write(self.export_display.toPlainText())
+                self.show_status(f"Requirements saved to {filename}", "success")
+            except Exception as e:
+                self.show_status(f"Error saving file: {str(e)}", "error")
 
-    env_path = os.path.join(base_dir, env_name)
-    if os.path.exists(env_path):
-        st.session_state.operation_status = "error"
-        st.session_state.operation_message = f"Virtual environment '{env_name}' already exists at {env_path}."
-        return
+    def browse_directory(self):
+        """Browse for a directory"""
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            "Select Base Directory",
+            self.base_dir_input.text()
+        )
 
-    try:
-        # Create base directory if it doesn't exist
-        os.makedirs(base_dir, exist_ok=True)
+        if directory:
+            self.base_dir_input.setText(directory)
+
+    def update_base_directory(self):
+        """Update the base directory for virtual environments"""
+        new_dir = self.base_dir_input.text().strip()
+
+        if not new_dir:
+            self.show_status("Please provide a valid directory", "error")
+            return
+
+        if not os.path.exists(new_dir):
+            reply = QMessageBox.question(
+                self,
+                'Create Directory',
+                f"Directory does not exist. Create it?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                try:
+                    os.makedirs(new_dir, exist_ok=True)
+                except Exception as e:
+                    self.show_status(f"Error creating directory: {str(e)}", "error")
+                    return
+            else:
+                return
+
+        self.base_dir = new_dir
+        self.show_status(f"Base directory updated to: {new_dir}", "success")
+
+        # Update UI
+        storage_label = self.findChild(QLabel, "storage_label")
+        if storage_label:
+            storage_label.setText(f"Virtual environments stored at: {self.base_dir}")
+
+        self.refresh_environments()
+
+    def show_status(self, message, status_type="info"):
+        """Show a status message"""
+        self.status_area.setText(message)
+
+        if status_type == "error":
+            self.status_area.setStyleSheet("background-color: #ffebee; color: #c62828; padding: 5px; border-radius: 3px;")
+        elif status_type == "success":
+            self.status_area.setStyleSheet("background-color: #e8f5e9; color: #2e7d32; padding: 5px; border-radius: 3px;")
+        else:  # info
+            self.status_area.setStyleSheet("background-color: #e3f2fd; color: #1565c0; padding: 5px; border-radius: 3px;")
+
+        self.status_area.setVisible(True)
+
+        # Auto-hide after 5 seconds for success messages
+        if status_type == "success":
+            QTimer.singleShot(5000, lambda: self.status_area.setVisible(False))
+
+    # Core functionality methods (adapted from Streamlit version)
+
+    def list_envs(self, base_dir=None):
+        """List all virtual environments in the base directory"""
+        if base_dir is None:
+            base_dir = self.base_dir
+
+        if not os.path.exists(base_dir):
+            return []
+
+        return sorted([name for name in os.listdir(base_dir)
+                      if os.path.isdir(os.path.join(base_dir, name))])
+
+    def get_python_version(self, env_name):
+        """Get Python version for a virtual environment"""
+        env_path = os.path.join(self.base_dir, env_name)
+
+        if os.name == "nt":
+            python_executable = os.path.join(env_path, "Scripts", "python.exe")
+        else:
+            python_executable = os.path.join(env_path, "bin", "python")
+
+        try:
+            result = subprocess.run(
+                [python_executable, "--version"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            return result.stdout.strip()
+        except Exception:
+            return "Unknown"
+
+    def create_and_register_kernel(self, env_name, additional_packages=None):
+        """Create a virtual environment and register it as a Jupyter kernel"""
+        env_path = os.path.join(self.base_dir, env_name)
+
+        if os.path.exists(env_path):
+            raise Exception(f"Virtual environment '{env_name}' already exists")
 
         # Create the virtual environment
         subprocess.check_call([sys.executable, "-m", "venv", env_path])
@@ -124,10 +588,8 @@ def create_and_register_kernel(env_name, base_dir=BASE_DIR, additional_packages=
         # Determine the python executable path for the new environment
         if os.name == "nt":
             python_executable = os.path.join(env_path, "Scripts", "python.exe")
-            pip_executable = os.path.join(env_path, "Scripts", "pip.exe")
         else:
             python_executable = os.path.join(env_path, "bin", "python")
-            pip_executable = os.path.join(env_path, "bin", "pip")
 
         # Upgrade pip and install ipykernel
         subprocess.check_call([python_executable, "-m", "pip", "install", "--upgrade", "pip"])
@@ -147,105 +609,89 @@ def create_and_register_kernel(env_name, base_dir=BASE_DIR, additional_packages=
             "--display-name", f"Python ({env_name})"
         ])
 
-        st.session_state.operation_status = "success"
-        st.session_state.operation_message = f"Virtual environment '{env_name}' created and registered as a Jupyter kernel successfully."
+        return True
 
-    except subprocess.CalledProcessError as e:
-        st.session_state.operation_status = "error"
-        st.session_state.operation_message = f"Error occurred: {str(e)}"
+    def remove_kernel_and_env(self, env_name):
+        """Unregister a Jupyter kernel and remove the associated virtual environment"""
+        env_path = os.path.join(self.base_dir, env_name)
 
-        # Cleanup if environment was partially created
-        if os.path.exists(env_path):
-            try:
-                shutil.rmtree(env_path)
-            except:
-                pass
-    except Exception as e:
-        st.session_state.operation_status = "error"
-        st.session_state.operation_message = f"Unexpected error: {str(e)}"
+        if not os.path.exists(env_path):
+            raise Exception(f"Environment '{env_name}' does not exist")
 
-def install_packages(env_name, packages):
-    """Install packages in a virtual environment"""
-    env_path = os.path.join(BASE_DIR, env_name)
-
-    if not os.path.exists(env_path):
-        st.session_state.operation_status = "error"
-        st.session_state.operation_message = f"Virtual environment '{env_name}' does not exist."
-        return
-
-    if os.name == "nt":
-        python_executable = os.path.join(env_path, "Scripts", "python.exe")
-    else:
-        python_executable = os.path.join(env_path, "bin", "python")
-
-    try:
-        packages_list = [pkg.strip() for pkg in packages.split(',') if pkg.strip()]
-        if not packages_list:
-            st.session_state.operation_status = "error"
-            st.session_state.operation_message = "No valid packages specified."
-            return
-
-        subprocess.check_call([
-            python_executable, "-m", "pip", "install"] + packages_list
-        )
-
-        st.session_state.operation_status = "success"
-        st.session_state.operation_message = f"Packages {', '.join(packages_list)} installed successfully in '{env_name}'."
-    except subprocess.CalledProcessError as e:
-        st.session_state.operation_status = "error"
-        st.session_state.operation_message = f"Error installing packages: {str(e)}"
-
-def remove_kernel_and_env(env_name, base_dir=BASE_DIR):
-    """Unregister a Jupyter kernel and remove the associated virtual environment"""
-    env_path = os.path.join(base_dir, env_name)
-    if not os.path.exists(env_path):
-        st.session_state.operation_status = "error"
-        st.session_state.operation_message = f"Environment '{env_name}' does not exist at {env_path}."
-        return
-
-    try:
         # First try to uninstall the Jupyter kernel
         cmd = f"{sys.executable} -m jupyter kernelspec uninstall {env_name} -y"
-        process = subprocess.run(
-            cmd,
-            shell=True,
-            text=True,
-            capture_output=True
-        )
-
-        # Even if kernel uninstallation fails, we'll still try to remove the environment
-        kernel_removed = process.returncode == 0
+        try:
+            subprocess.run(
+                cmd,
+                shell=True,
+                text=True,
+                capture_output=True,
+                check=False  # Don't raise exception if this fails
+            )
+        except Exception:
+            # Continue even if kernel uninstallation fails
+            pass
 
         # Now remove the virtual environment directory
         if os.path.exists(env_path):
             shutil.rmtree(env_path)
 
-        if kernel_removed:
-            st.session_state.operation_status = "success"
-            st.session_state.operation_message = f"Environment '{env_name}' and its kernel have been removed successfully."
+        return True
+
+    def install_packages_in_env(self, env_name, packages):
+        """Install packages in a virtual environment"""
+        env_path = os.path.join(self.base_dir, env_name)
+
+        if not os.path.exists(env_path):
+            raise Exception(f"Virtual environment '{env_name}' does not exist")
+
+        if os.name == "nt":
+            python_executable = os.path.join(env_path, "Scripts", "python.exe")
         else:
-            st.session_state.operation_status = "warning"
-            st.session_state.operation_message = f"Environment '{env_name}' has been removed, but there may have been issues removing the kernel: {process.stderr}"
+            python_executable = os.path.join(env_path, "bin", "python")
 
-    except Exception as e:
-        st.session_state.operation_status = "error"
-        st.session_state.operation_message = f"Error removing environment: {str(e)}"
+        packages_list = [pkg.strip() for pkg in packages.split(',') if pkg.strip()]
+        if not packages_list:
+            raise Exception("No valid packages specified")
 
-def export_requirements(env_name):
-    """Export requirements.txt from a virtual environment"""
-    env_path = os.path.join(BASE_DIR, env_name)
+        subprocess.check_call([
+            python_executable, "-m", "pip", "install"] + packages_list
+        )
 
-    if not os.path.exists(env_path):
-        st.session_state.operation_status = "error"
-        st.session_state.operation_message = f"Virtual environment '{env_name}' does not exist."
-        return None
+        return True
 
-    if os.name == "nt":
-        python_executable = os.path.join(env_path, "Scripts", "python.exe")
-    else:
-        python_executable = os.path.join(env_path, "bin", "python")
+    def get_installed_packages(self, env_name):
+        """Get list of installed packages in a virtual environment"""
+        env_path = os.path.join(self.base_dir, env_name)
 
-    try:
+        if os.name == "nt":
+            python_executable = os.path.join(env_path, "Scripts", "python.exe")
+        else:
+            python_executable = os.path.join(env_path, "bin", "python")
+
+        try:
+            result = subprocess.run(
+                [python_executable, "-m", "pip", "list", "--format=freeze"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            return result.stdout.splitlines()
+        except subprocess.CalledProcessError:
+            return []
+
+    def export_requirements_from_env(self, env_name):
+        """Export requirements.txt from a virtual environment"""
+        env_path = os.path.join(self.base_dir, env_name)
+
+        if not os.path.exists(env_path):
+            raise Exception(f"Virtual environment '{env_name}' does not exist")
+
+        if os.name == "nt":
+            python_executable = os.path.join(env_path, "Scripts", "python.exe")
+        else:
+            python_executable = os.path.join(env_path, "bin", "python")
+
         result = subprocess.run(
             [python_executable, "-m", "pip", "freeze"],
             capture_output=True,
@@ -253,246 +699,19 @@ def export_requirements(env_name):
             check=True
         )
         return result.stdout
-    except subprocess.CalledProcessError as e:
-        st.session_state.operation_status = "error"
-        st.session_state.operation_message = f"Error exporting requirements: {str(e)}"
-        return None
 
-def list_envs(base_dir=BASE_DIR):
-    """List all virtual environments in the base directory"""
-    if not os.path.exists(base_dir):
-        return []
-    return sorted([name for name in os.listdir(base_dir)
-                  if os.path.isdir(os.path.join(base_dir, name))])
 
-def run_creation(env_name, additional_packages=None):
-    """Run environment creation in a separate thread"""
-    thread = threading.Thread(
-        target=create_and_register_kernel,
-        args=(env_name,),
-        kwargs={"additional_packages": additional_packages}
-    )
-    thread.start()
-    # Wait a bit for the thread to complete
-    time.sleep(0.5)
+def main():
+    app = QApplication(sys.argv)
 
-def run_removal(env_name):
-    """Run environment removal in a separate thread"""
-    thread = threading.Thread(target=remove_kernel_and_env, args=(env_name,))
-    thread.start()
-    # Wait a bit for the thread to complete
-    time.sleep(0.5)
+    # Set application style
+    app.setStyle("Fusion")
 
-def run_install_packages(env_name, packages):
-    """Run package installation in a separate thread"""
-    thread = threading.Thread(target=install_packages, args=(env_name, packages))
-    thread.start()
-    # Wait a bit for the thread to complete
-    time.sleep(0.5)
+    window = JunoApp()
+    window.show()
 
-def refresh_envs():
-    """Force refresh of environments list"""
-    st.session_state.refresh_counter += 1
+    sys.exit(app.exec_())
 
-# Display banner/logo
-st.title("🚀 Juno: JupyterLab Virtual Environment Manager")
-st.write("""
-Juno simplifies the management of Python virtual environments for JupyterLab.
-Create, manage, and remove virtual environments that are registered as Jupyter kernels.
-""")
 
-# Show storage location
-st.info(f"Virtual environments are stored at: **{BASE_DIR}**")
-
-# Display status messages if any
-if st.session_state.operation_status == "success":
-    st.success(st.session_state.operation_message)
-    st.session_state.operation_status = None
-elif st.session_state.operation_status == "error":
-    st.error(st.session_state.operation_message)
-    st.session_state.operation_status = None
-elif st.session_state.operation_status == "warning":
-    st.warning(st.session_state.operation_message)
-    st.session_state.operation_status = None
-
-# Create two columns for layout
-col1, col2 = st.columns([1, 2])
-
-# Left column: Create new environment
-with col1:
-    st.header("Create Environment")
-
-    with st.form(key="create_env_form"):
-        env_name = st.text_input("Environment Name:",
-                               help="Enter a name for your virtual environment. Use only alphanumeric characters and underscores.")
-
-        additional_packages = st.text_input("Additional Packages (comma-separated):",
-                                        help="List any additional packages to install, separated by commas (e.g., numpy,pandas,matplotlib).")
-
-        submit_button = st.form_submit_button(label="Create Environment")
-
-        if submit_button:
-            if not env_name or not env_name.strip():
-                st.error("Please provide a valid environment name.")
-            else:
-                run_creation(env_name.strip(), additional_packages)
-                refresh_envs()
-
-# Right column: List environments
-with col2:
-    st.header("Manage Environments")
-
-    if st.button("Refresh Environment List"):
-        refresh_envs()
-
-    # Get the list of environments
-    envs = list_envs()
-
-    if not envs:
-        st.write("No virtual environments found.")
-    else:
-        # Create tabs for different management operations
-        tabs = st.tabs(["View & Remove", "Install Packages", "Export Requirements", "Advanced Options"])
-
-        # Tab 1: View and Remove environments
-        with tabs[0]:
-            for env in envs:
-                with st.container():
-                    # Create a card-like appearance for each environment
-                    st.markdown(f"<div class='env-card'>", unsafe_allow_html=True)
-
-                    env_path = os.path.join(BASE_DIR, env)
-                    python_version = get_python_version(env)
-
-                    # Display environment details
-                    col_info, col_actions = st.columns([3, 1])
-
-                    with col_info:
-                        st.markdown(f"#### {env}")
-                        st.text(f"Path: {env_path}")
-                        st.text(f"Python: {python_version}")
-
-                    with col_actions:
-                        # Remove button
-                        if st.button("Remove", key=f"remove_{env}"):
-                            if st.session_state.get(f"confirm_remove_{env}", False):
-                                run_removal(env)
-                                refresh_envs()
-                                st.session_state[f"confirm_remove_{env}"] = False
-                            else:
-                                st.session_state[f"confirm_remove_{env}"] = True
-
-                        # Show confirmation if needed
-                        if st.session_state.get(f"confirm_remove_{env}", False):
-                            st.warning(f"Are you sure you want to remove '{env}'?")
-                            # Use buttons side by side without nested columns
-                            if st.button("Yes", key=f"yes_remove_{env}"):
-                                run_removal(env)
-                                refresh_envs()
-                                st.session_state[f"confirm_remove_{env}"] = False
-                            if st.button("No", key=f"no_remove_{env}"):
-                                st.session_state[f"confirm_remove_{env}"] = False
-
-                    st.markdown("</div>", unsafe_allow_html=True)
-                    st.write("")  # Add some spacing
-
-        # Tab 2: Install Packages
-        with tabs[1]:
-            selected_env = st.selectbox("Select Environment:", envs, key="install_env_select")
-
-            with st.form(key="install_packages_form"):
-                packages = st.text_input("Packages to Install (comma-separated):",
-                                      help="List packages to install, separated by commas (e.g., numpy,pandas,matplotlib).")
-
-                submit_install = st.form_submit_button(label="Install Packages")
-
-                if submit_install:
-                    if not packages or not packages.strip():
-                        st.error("Please specify at least one package to install.")
-                    else:
-                        run_install_packages(selected_env, packages)
-                        refresh_envs()
-
-            # Show currently installed packages
-            if st.checkbox("Show Installed Packages", key="show_packages"):
-                packages = get_installed_packages(selected_env)
-                if packages:
-                    st.code("\n".join(packages), language="text")
-                else:
-                    st.warning("Unable to retrieve package list.")
-
-        # Tab 3: Export Requirements
-        with tabs[2]:
-            export_env = st.selectbox("Select Environment:", envs, key="export_env_select")
-
-            if st.button("Export requirements.txt"):
-                requirements = export_requirements(export_env)
-                if requirements is not None:
-                    # Create a download button for the requirements file
-                    st.download_button(
-                        label="Download requirements.txt",
-                        data=requirements,
-                        file_name="requirements.txt",
-                        mime="text/plain"
-                    )
-
-                    # Also display the requirements
-                    st.code(requirements, language="text")
-                    
-        # Tab 4: Advanced Options
-        with tabs[3]:
-            st.subheader("Environment Settings")
-            
-            st.write("Configure advanced settings for your Jupyter environments.")
-            
-            custom_base_dir = st.text_input(
-                "Custom Base Directory:", 
-                value=BASE_DIR,
-                help="Change the base directory where virtual environments are stored."
-            )
-            
-            if st.button("Update Base Directory"):
-                if os.path.exists(custom_base_dir):
-                    st.session_state.operation_status = "success"
-                    st.session_state.operation_message = f"Base directory updated to: {custom_base_dir}"
-                    # This would require restarting the app to take effect
-                    st.info("Please restart the application for changes to take effect.")
-                else:
-                    st.session_state.operation_status = "error"
-                    st.session_state.operation_message = f"Directory does not exist: {custom_base_dir}"
-
-# Footer
-st.markdown("---")
-st.markdown("""
-Juno: JupyterLab Virtual Environment Manager |
-[GitHub](https://github.com/velocitatem/juno) |
-MIT License
-""")
-
-# Help section in sidebar
-with st.sidebar:
-    st.header("Help")
-
-    with st.expander("About Juno"):
-        st.write("""
-        Juno is a lightweight Streamlit-based application designed to simplify the management of
-        Python virtual environments for JupyterLab. Inspired by NASA's Juno mission, this tool helps
-        you create, list, and remove virtual environments that are registered as Jupyter kernels.
-        """)
-
-    with st.expander("How to Use"):
-        st.write("""
-        1. **Create Environment:** Enter a name and optional packages, then click 'Create Environment'.
-        2. **View Environments:** All environments are listed in the 'Manage Environments' section.
-        3. **Remove Environment:** Click the 'Remove' button next to an environment to delete it.
-        4. **Install Packages:** Use the 'Install Packages' tab to add packages to an existing environment.
-        5. **Export Requirements:** Export requirements.txt from any environment.
-        """)
-
-    with st.expander("Troubleshooting"):
-        st.write("""
-        - **Missing Jupyter:** Make sure Jupyter is installed on your system.
-        - **Permission Issues:** Ensure you have write permissions to the environment directory.
-        - **Kernel Not Showing:** Restart JupyterLab after creating a new environment.
-        - **Remove Failures:** If an environment fails to remove, try restarting the application.
-        """)
+if __name__ == "__main__":
+    main()
