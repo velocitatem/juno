@@ -44,6 +44,6 @@
 
   <!-- Subtitle -->
   <text x="410" y="140" font-family="Arial, sans-serif" font-size="24" fill="#BDC3C7" text-anchor="start">Jupyter Unified</text>
-  <text x="407" y="170" font-family="Arial, sans-serif" font-size="24" fill="#BDC3C7" text-anchor="start">Notebook Orchestrator</text>
+  <text x="410" y="170" font-family="Arial, sans-serif" font-size="24" fill="#BDC3C7" text-anchor="start">Notebook Orchestrator</text>
 
 </svg>
