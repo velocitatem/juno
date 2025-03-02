@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200">
+  <!-- Background -->
+  <rect width="800" height="200" fill="#1E1E2E" rx="10" ry="10"/>
+
+  <!-- Jupiter-inspired gradient circle -->
+  <defs>
+    <linearGradient id="jupiterGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F39C12"/>
+      <stop offset="50%" stop-color="#E67E22"/>
+      <stop offset="100%" stop-color="#D35400"/>
+    </linearGradient>
+    <linearGradient id="orbitGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3498DB"/>
+      <stop offset="100%" stop-color="#2980B9"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Planet Jupiter -->
+  <circle cx="180" cy="100" r="70" fill="url(#jupiterGradient)"/>
+
+  <!-- Jupiter stripes -->
+  <path d="M110 90 Q180 75, 250 90" stroke="#C0392B" stroke-width="8" fill="none"/>
+  <path d="M110 110 Q180 125, 250 110" stroke="#E74C3C" stroke-width="6" fill="none"/>
+  <path d="M120 70 Q180 60, 240 70" stroke="#D35400" stroke-width="5" fill="none"/>
+
+  <!-- Orbit path -->
+  <ellipse cx="180" cy="100" rx="130" ry="60" stroke="url(#orbitGradient)" stroke-width="3" fill="none" stroke-dasharray="10,5"/>
+
+  <!-- Juno spacecraft (simplified) -->
+  <g transform="translate(320, 100) rotate(30)">
+    <!-- Solar panels -->
+    <rect x="-40" y="-15" width="30" height="30" fill="#3498DB"/>
+    <rect x="10" y="-15" width="30" height="30" fill="#3498DB"/>
+
+    <!-- Main body -->
+    <rect x="-10" y="-10" width="20" height="20" fill="#ECF0F1"/>
+
+    <!-- Antenna -->
+    <circle cx="0" cy="0" r="5" fill="#95A5A6"/>
+  </g>
+
+  <!-- Title -->
+  <text x="410" y="100" font-family="Arial, sans-serif" font-size="60" font-weight="bold" fill="#ECF0F1" text-anchor="start">JUNO</text>
+
+  <!-- Subtitle -->
+  <text x="410" y="140" font-family="Arial, sans-serif" font-size="24" fill="#BDC3C7" text-anchor="start">Jupyter Unified</text>
+  <text x="407" y="170" font-family="Arial, sans-serif" font-size="24" fill="#BDC3C7" text-anchor="start">Notebook Orchestrator</text>
+
+</svg>

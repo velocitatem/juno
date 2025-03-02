@@ -1,4 +1,4 @@
-![banner](./banner.png)
+![banner](./banner.svg)
 
 Juno is a lightweight Streamlit-based application designed to simplify the management of Python virtual environments for JupyterLab. Inspired by NASA’s Juno mission, this tool helps you create, list, and remove virtual environments that are registered as Jupyter kernels, making it easier to work with multiple Python environments within JupyterLab.
 
