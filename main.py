@@ -385,15 +385,13 @@ with col2:
                         # Show confirmation if needed
                         if st.session_state.get(f"confirm_remove_{env}", False):
                             st.warning(f"Are you sure you want to remove '{env}'?")
-                            col_yes, col_no = st.columns(2)
-                            with col_yes:
-                                if st.button("Yes", key=f"yes_remove_{env}"):
-                                    run_removal(env)
-                                    refresh_envs()
-                                    st.session_state[f"confirm_remove_{env}"] = False
-                            with col_no:
-                                if st.button("No", key=f"no_remove_{env}"):
-                                    st.session_state[f"confirm_remove_{env}"] = False
+                            # Use buttons side by side without nested columns
+                            if st.button("Yes", key=f"yes_remove_{env}"):
+                                run_removal(env)
+                                refresh_envs()
+                                st.session_state[f"confirm_remove_{env}"] = False
+                            if st.button("No", key=f"no_remove_{env}"):
+                                st.session_state[f"confirm_remove_{env}"] = False
 
                     st.markdown("</div>", unsafe_allow_html=True)
                     st.write("")  # Add some spacing
