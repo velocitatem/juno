@@ -8,7 +8,7 @@ from pathlib import Path
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout,
                            QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit,
                            QListWidget, QListWidgetItem, QMessageBox, QComboBox,
-                           QFileDialog, QGroupBox, QFormLayout, QCheckBox, QSplitter)
+                             QFileDialog, QGroupBox, QFormLayout, QCheckBox, QSplitter, QFrame)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer
 from PyQt5.QtGui import QIcon, QFont, QColor
 
@@ -33,6 +33,69 @@ class WorkerThread(QThread):
 
 
 class JunoApp(QMainWindow):
+    # Button style constants
+    PRIMARY_BUTTON_STYLE = """
+        QPushButton {
+            background-color: #1976D2;
+            color: white;
+            border-radius: 4px;
+            padding: 8px 15px;
+            font-weight: bold;
+            min-height: 30px;
+        }
+        QPushButton:hover {
+            background-color: #1565C0;
+        }
+        QPushButton:pressed {
+            background-color: #0D47A1;
+        }
+        QPushButton:disabled {
+            background-color: #BBDEFB;
+            color: #78909C;
+        }
+    """
+    
+    DANGER_BUTTON_STYLE = """
+        QPushButton {
+            background-color: #E53935;
+            color: white;
+            border-radius: 4px;
+            padding: 8px 15px;
+            font-weight: bold;
+            min-height: 30px;
+        }
+        QPushButton:hover {
+            background-color: #D32F2F;
+        }
+        QPushButton:pressed {
+            background-color: #B71C1C;
+        }
+        QPushButton:disabled {
+            background-color: #FFCDD2;
+            color: #78909C;
+        }
+    """
+    
+    SECONDARY_BUTTON_STYLE = """
+        QPushButton {
+            background-color: #78909C;
+            color: white;
+            border-radius: 4px;
+            padding: 8px 15px;
+            min-height: 30px;
+        }
+        QPushButton:hover {
+            background-color: #607D8B;
+        }
+        QPushButton:pressed {
+            background-color: #455A64;
+        }
+        QPushButton:disabled {
+            background-color: #CFD8DC;
+            color: #90A4AE;
+        }
+    """
+    
     def __init__(self):
         super().__init__()
 
@@ -42,10 +105,10 @@ class JunoApp(QMainWindow):
 
         # Create the base directory if it doesn't exist
         os.makedirs(self.base_dir, exist_ok=True)
-        
+
         # Initialize thread attributes
         self.create_thread = None
-        self.remove_thread = None 
+        self.remove_thread = None
         self.install_thread = None
         self.worker_thread = None
 
@@ -61,27 +124,60 @@ class JunoApp(QMainWindow):
         self.main_layout = QVBoxLayout(self.central_widget)
 
         # Add title and description
+        header_container = QWidget()
+        header_layout = QVBoxLayout(header_container)
+        header_layout.setContentsMargins(15, 20, 15, 10)
+
         title_label = QLabel("♃ Juno: JupyterLab Virtual Environment Manager")
         title_font = QFont()
-        title_font.setPointSize(16)
+        title_font.setPointSize(18)
         title_font.setBold(True)
+        title_font.setFamily("Arial")
         title_label.setFont(title_font)
+        title_label.setStyleSheet("color: #1565C0;")
+        title_label.setAlignment(Qt.AlignCenter)
 
         desc_label = QLabel("Manage Python virtual environments for JupyterLab.")
+        desc_font = QFont()
+        desc_font.setPointSize(11)
+        desc_label.setFont(desc_font)
+        desc_label.setAlignment(Qt.AlignCenter)
+        desc_label.setStyleSheet("color: #546E7A; margin-bottom: 10px;")
 
-        self.main_layout.addWidget(title_label)
-        self.main_layout.addWidget(desc_label)
+        header_layout.addWidget(title_label)
+        header_layout.addWidget(desc_label)
+
+        # Add a subtle separator line
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        separator.setStyleSheet("background-color: #BBDEFB; border: none; height: 2px; margin: 0 15px;")
+
+        self.main_layout.addWidget(header_container)
+        self.main_layout.addWidget(separator)
 
         # Display storage location
+        storage_container = QWidget()
+        storage_layout = QHBoxLayout(storage_container)
+        storage_layout.setContentsMargins(15, 10, 15, 10)
+
         storage_label = QLabel(f"Virtual environments stored at: {self.base_dir}")
-        storage_label.setStyleSheet("background-color: #e0f7fa; padding: 5px; border-radius: 3px;")
-        self.main_layout.addWidget(storage_label)
+        storage_label.setStyleSheet("background-color: #E3F2FD; color: #0D47A1; padding: 10px; border-radius: 5px; border: 1px solid #BBDEFB;")
+        storage_layout.addWidget(storage_label)
+
+        self.main_layout.addWidget(storage_container)
 
         # Status message area
+        status_container = QWidget()
+        status_layout = QHBoxLayout(status_container)
+        status_layout.setContentsMargins(15, 5, 15, 5)
+
         self.status_area = QLabel()
-        self.status_area.setStyleSheet("padding: 5px; margin: 5px 0; border-radius: 3px;")
+        self.status_area.setStyleSheet("padding: 12px; margin: 5px 0; border-radius: 5px; font-weight: bold;")
         self.status_area.setVisible(False)
-        self.main_layout.addWidget(self.status_area)
+        status_layout.addWidget(self.status_area)
+
+        self.main_layout.addWidget(status_container)
 
         # Create the main content splitter (left/right panels)
         self.content_splitter = QSplitter(Qt.Horizontal)
@@ -527,15 +623,18 @@ class JunoApp(QMainWindow):
 
     def show_status(self, message, status_type="info"):
         """Show a status message"""
-        self.status_area.setText(message)
-
         if status_type == "error":
-            self.status_area.setStyleSheet("background-color: #ffebee; color: #c62828; padding: 5px; border-radius: 3px;")
+            icon = "❌ "
+            style = "background-color: #FFEBEE; color: #C62828; padding: 12px; border-radius: 5px; border: 1px solid #FFCDD2; font-weight: bold;"
         elif status_type == "success":
-            self.status_area.setStyleSheet("background-color: #e8f5e9; color: #2e7d32; padding: 5px; border-radius: 3px;")
+            icon = "✅ "
+            style = "background-color: #E8F5E9; color: #2E7D32; padding: 12px; border-radius: 5px; border: 1px solid #C8E6C9; font-weight: bold;"
         else:  # info
-            self.status_area.setStyleSheet("background-color: #e3f2fd; color: #1565c0; padding: 5px; border-radius: 3px;")
+            icon = "ℹ️ "
+            style = "background-color: #E3F2FD; color: #1565C0; padding: 12px; border-radius: 5px; border: 1px solid #BBDEFB; font-weight: bold;"
 
+        self.status_area.setText(f"{icon} {message}")
+        self.status_area.setStyleSheet(style)
         self.status_area.setVisible(True)
 
         # Auto-hide after 5 seconds for success messages
@@ -706,6 +805,22 @@ def main():
 
     # Set application style
     app.setStyle("Fusion")
+
+    # Set a modern color palette
+    palette = app.palette()
+    palette.setColor(palette.Window, QColor(240, 244, 249))
+    palette.setColor(palette.WindowText, QColor(35, 35, 35))
+    palette.setColor(palette.Base, QColor(255, 255, 255))
+    palette.setColor(palette.AlternateBase, QColor(230, 235, 245))
+    palette.setColor(palette.ToolTipBase, QColor(255, 255, 255))
+    palette.setColor(palette.ToolTipText, QColor(35, 35, 35))
+    palette.setColor(palette.Text, QColor(35, 35, 35))
+    palette.setColor(palette.Button, QColor(240, 244, 249))
+    palette.setColor(palette.ButtonText, QColor(35, 35, 35))
+    palette.setColor(palette.BrightText, QColor(240, 60, 60))
+    palette.setColor(palette.Highlight, QColor(42, 130, 218))
+    palette.setColor(palette.HighlightedText, QColor(255, 255, 255))
+    app.setPalette(palette)
 
     window = JunoApp()
     window.show()
