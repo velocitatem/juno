@@ -1,47 +1,53 @@
 ![banner](./banner.svg)
 
-Juno is a lightweight Streamlit-based application designed to simplify the management of Python virtual environments for JupyterLab. Inspired by NASA’s Juno mission, this tool helps you create, list, and remove virtual environments that are registered as Jupyter kernels, making it easier to work with multiple Python environments within JupyterLab.
+# Juno: JupyterLab Virtual Environment Manager
+
+Juno is a desktop application designed to simplify the management of Python virtual environments for JupyterLab. This tool helps you create, manage, and remove virtual environments that are registered as Jupyter kernels, making it easier to work with multiple Python environments within JupyterLab.
 
 ## Features
 
 - **Create Virtual Environments:**
   Easily create new Python virtual environments and automatically register them as Jupyter kernels.
 
-- **List Existing Environments:**
-  View all virtual environments that have been created using the app.
+- **Manage Existing Environments:**
+  View details about all environments created with Juno.
+
+- **Install Packages:**
+  Add new packages to existing environments directly from the interface.
+
+- **Export Requirements:**
+  Generate and save requirements.txt files from your environments.
 
 - **Remove Environments:**
-  Unregister the corresponding Jupyter kernel and remove the virtual environment when it’s no longer needed.
+  Unregister Jupyter kernels and remove virtual environments when no longer needed.
 
 - **Customizable Storage:**
-  Configure the directory where virtual environments are stored via an environment variable.
+  Configure the directory where virtual environments are stored.
 
 ## Prerequisites
 
 - Python 3.7 or later
-- [Streamlit](https://streamlit.io/)
-- [Jupyter](https://jupyter.org/) (for registering kernels)
-- [ipykernel](https://pypi.org/project/ipykernel/)
+- PyQt5
+- Jupyter (for registering kernels)
+- ipykernel
 
 ## Installation
 
-1. **Clone the repository (if applicable) or download `main.py`:**
+1. **Clone the repository:**
 
    ```bash
-   git clone https://github.com/yourusername/juno-venv-manager.git
-   cd juno-venv-manager
+   git clone https://github.com/yourusername/juno.git
+   cd juno
    ```
 
 2. **Install dependencies:**
 
-   Create a virtual environment (if desired) and install the required packages:
-
    ```bash
-   pip install streamlit jupyter ipykernel
+   pip install -r requirements.txt
    ```
 
 3. **(Optional) Set the Virtual Environments Directory:**
-   By default, Juno stores virtual environments in `~/.jupyter_venvs`. To change this, set the `JUNO_VENV_DIR` environment variable. For example:
+   By default, Juno stores virtual environments in `~/.jupyter_venvs`. To change this, set the `JUNO_VENV_DIR` environment variable:
 
    ```bash
    export JUNO_VENV_DIR=/path/to/your/venv_directory
@@ -49,43 +55,51 @@ Juno is a lightweight Streamlit-based application designed to simplify the manag
 
 ## Usage
 
-1. **Run the App:**
+1. **Run the Application:**
 
    From the command line, run:
 
    ```bash
-   streamlit run main.py
+   python main.py
    ```
 
 2. **Using the Interface:**
 
-   - **Create a New Virtual Environment:**
-     Enter the desired name for your new environment and click the "Create Virtual Environment" button. The app will create the environment, install/upgrades `pip` and `ipykernel`, and register it as a Jupyter kernel (displayed as `Python (env_name)` in JupyterLab).
+   - **Create a New Environment:**
+     Enter a name for your environment, optionally specify additional packages, and click "Create Environment".
 
-   - **View Existing Virtual Environments:**
-     The app displays a list of currently managed virtual environments.
+   - **View & Remove Environments:**
+     Select an environment from the list to view its details, then use the "Remove" button to delete it if needed.
 
-   - **Remove an Environment:**
-     To remove an environment, click the "Remove" button next to its name. This will uninstall the associated Jupyter kernel and delete the virtual environment directory.
+   - **Install Packages:**
+     Choose an environment, enter package names separated by commas, and click "Install Packages".
 
-3. **Launch a Kernel in JupyterLab:**
-   Once an environment is created and registered, you can select it in JupyterLab when starting a new notebook or changing the kernel for an existing notebook.
+   - **Export Requirements:**
+     Generate a requirements.txt file from any environment, which can be saved to your filesystem.
+
+   - **Settings:**
+     Change the base directory where environments are stored.
+
+3. **Use in JupyterLab:**
+   After creating environments with Juno, they will appear in JupyterLab's kernel selection menu when starting a new notebook or changing kernels.
 
 ## Important Notes
 
 - **Kernel Registration:**
-  Activating a virtual environment (e.g., using `source /path/to/venv/bin/activate`) does not automatically register it with JupyterLab. Juno takes care of registration by running the `ipykernel install` command after creating the environment.
-
-- **Persistence:**
-  Make sure that the virtual environments directory (default or set via `JUNO_VENV_DIR`) is persistent across sessions if you plan to use these environments over time.
+  Juno handles the registration of environments with JupyterLab by running the `ipykernel install` command automatically.
 
 - **Permissions:**
-  Ensure that your user has the necessary permissions to create directories, execute Python commands, and write to the kernelspec directory used by Jupyter.
+  Ensure your user has the necessary permissions to create directories, execute Python commands, and write to the kernelspec directory used by Jupyter.
 
-## Contributing
+- **Python Version:**
+  Environments are created using the Python version that is running Juno.
 
-Contributions are welcome! Feel free to open an issue or submit a pull request if you have ideas or improvements.
+## Troubleshooting
+
+- **Missing Jupyter:** Make sure Jupyter is installed in your system Python environment.
+- **Permission Issues:** Ensure you have write permissions to the environments directory.
+- **Kernel Not Showing:** Restart JupyterLab after creating a new environment if it doesn't appear immediately.
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License.
